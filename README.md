@@ -4,3 +4,4 @@ Assumption:
 - Using the most basic slot machine rule: only the middle line is calculated for final result
 - Project is tested for web build.
 - All variable are remotely configable (planed)
+- SFX and BGM included

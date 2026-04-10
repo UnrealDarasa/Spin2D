@@ -1,5 +1,4 @@
 import { _decorator, Component, Node, Sprite, SpriteFrame, tween, Vec3 } from 'cc';
-import { GameConfig } from './GameConfig';
 const { ccclass, property } = _decorator;
 
 /**

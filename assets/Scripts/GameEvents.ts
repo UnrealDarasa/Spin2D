@@ -9,6 +9,9 @@
 export const GameEvents = {
 
     // ── UI → Game (requests) ─────────────────────────────────
+    /** Player tapped any button. No payload. */
+    BUTTON_CLICKED: 'button:clicked',
+
     /** Player tapped SPIN. No payload. */
     SPIN_REQUESTED: 'spin:requested',
 

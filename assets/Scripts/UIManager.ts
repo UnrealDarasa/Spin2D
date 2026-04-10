@@ -77,10 +77,12 @@ export class UIManager extends Component {
     // ── Button handlers (emit requests) ──────────────────────
 
     private onSpinClicked(): void {
+        director.emit(GameEvents.BUTTON_CLICKED);
         director.emit(GameEvents.SPIN_REQUESTED);
     }
 
     private onResetClicked(): void {
+        director.emit(GameEvents.BUTTON_CLICKED);
         director.emit(GameEvents.RESET_REQUESTED);
     }
 

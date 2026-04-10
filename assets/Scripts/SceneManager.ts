@@ -1,6 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { GameConfig } from './GameConfig';
 import { GameManager as GameplayManager } from './GameManager';
+import { SFXManager } from './SFXManager';
 import { SpinController } from './SpinController';
 import { UIManager } from './UIManager';
 const { ccclass, property } = _decorator;
@@ -28,6 +29,9 @@ export class SceneManager extends Component {
 
     @property({ type: GameplayManager, tooltip: 'GameManager component (wire the GameManager node)' })
     public gameplayManager: GameplayManager | null = null;
+
+    @property({ type: SFXManager, tooltip: 'SFXManager component (wire the SFXManager node)' })
+    public sfxManager: SFXManager | null = null;
 
 }
 
