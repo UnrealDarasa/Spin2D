@@ -1,4 +1,4 @@
-import { _decorator, Component, Label, Button, director } from 'cc';
+import { _decorator, Component, Label, Button, director, tween, Vec3 } from 'cc';
 import { GameConfig } from './GameConfig';
 import { GameEvents } from './GameEvents';
 import { SpinResult } from './GameManager';
@@ -23,11 +23,17 @@ export class UIManager extends Component {
     @property({ type: Label, tooltip: 'Label showing spin result text' })
     public resultLabel: Label | null = null;
 
+    @property({ type: Label, tooltip: 'Label showing total money won' })
+    public winCountLabel: Label | null = null;
+
     @property({ type: Button, tooltip: 'The Spin button' })
     public spinButton: Button | null = null;
 
     @property({ type: Button, tooltip: 'The Reset button' })
     public resetButton: Button | null = null;
+
+    // ── State ────────────────────────────────────────────────
+    private _totalWinMoney: number = 0;
 
     // ── Lifecycle ────────────────────────────────────────────
 
@@ -38,6 +44,7 @@ export class UIManager extends Component {
         director.on(GameEvents.BET_REJECTED, this._onBetRejected, this);
         director.on(GameEvents.SPIN_RESULT, this._onSpinResult, this);
         director.on(GameEvents.GAME_RESET, this._onGameReset, this);
+        director.on(GameEvents.LOW_CREDITS, this._onLowCredits, this);
     }
 
     start() {
@@ -49,7 +56,7 @@ export class UIManager extends Component {
             this.resetButton.node.on(Button.EventType.CLICK, this._onResetClicked, this);
         }
 
-        this._showResult('Spin to play!');
+        this._showResult('');
     }
 
     onDestroy() {
@@ -58,6 +65,7 @@ export class UIManager extends Component {
         director.off(GameEvents.BET_REJECTED, this._onBetRejected, this);
         director.off(GameEvents.SPIN_RESULT, this._onSpinResult, this);
         director.off(GameEvents.GAME_RESET, this._onGameReset, this);
+        director.off(GameEvents.LOW_CREDITS, this._onLowCredits, this);
     }
 
     // ── Button handlers (emit requests) ──────────────────────
@@ -77,43 +85,46 @@ export class UIManager extends Component {
     }
 
     private _onBetPlaced(_payload: { balance: number }): void {
+        // Disable both buttons during spin
         this._setSpinButtonEnabled(false);
-        this._showResult('Spinning...');
+        this._setResetButtonEnabled(false);
+        const cfg = GameConfig.instance;
+        this._showResult(cfg.spinningText);
     }
 
     private _onBetRejected(): void {
-        this._showResult('Not enough credits!');
+        // No change to result label
     }
 
     private _onSpinResult(payload: { result: SpinResult; payout: number; balance: number }): void {
-        const cfg = GameConfig.instance;
+        // Show payout amount (0 for losses, positive for wins)
+        this._showResult(payload.payout > 0 ? `+${payload.payout}` : '');
 
-        switch (payload.result) {
-            case SpinResult.Lose:
-                this._showResult('No luck! Try again.');
-                break;
-            case SpinResult.SmallWin:
-                this._showResult(`Small Win! +${cfg.smallWinPayout} credits 🎉`);
-                break;
-            case SpinResult.BigWin:
-                this._showResult(`BIG WIN! +${cfg.bigWinPayout} credits 🎊🎊`);
-                break;
+        // Add payout to total wins
+        if (payload.payout > 0) {
+            this._addToTotalWin(payload.payout);
         }
 
-        // Re-enable spin only if player can still bet
-        this._setSpinButtonEnabled(payload.balance >= cfg.betAmount);
+        // Re-enable both buttons, but disable spin if insufficient credits
+        const cfg = GameConfig.instance;
+        const canBet = payload.balance >= cfg.betAmount;
+        this._setSpinButtonEnabled(canBet);
+        this._setResetButtonEnabled(true);
     }
 
     private _onGameReset(payload: { balance: number }): void {
-        this._showResult('Spin to play!');
+        this._showResult('');
         this._setSpinButtonEnabled(true);
+        this._setResetButtonEnabled(true);
+        this._resetTotalWin();
     }
 
     // ── Display helpers (private) ────────────────────────────
 
     private _updateBalance(balance: number): void {
         if (this.balanceLabel) {
-            this.balanceLabel.string = `Credits: ${balance}`;
+            const cfg = GameConfig.instance;
+            this.balanceLabel.string = `${cfg.balancePrefix} ${balance}`;
         }
     }
 
@@ -126,6 +137,48 @@ export class UIManager extends Component {
     private _setSpinButtonEnabled(enabled: boolean): void {
         if (this.spinButton) {
             this.spinButton.interactable = enabled;
+        }
+    }
+
+    private _setResetButtonEnabled(enabled: boolean): void {
+        if (this.resetButton) {
+            this.resetButton.interactable = enabled;
+        }
+    }
+
+    private _addToTotalWin(amount: number): void {
+        this._totalWinMoney += amount;
+        this._updateTotalWin();
+    }
+
+    private _resetTotalWin(): void {
+        this._totalWinMoney = 0;
+        this._updateTotalWin();
+    }
+
+    private _updateTotalWin(): void {
+        if (this.winCountLabel) {
+            const cfg = GameConfig.instance;
+            this.winCountLabel.string = `${cfg.totalWonPrefix} ${this._totalWinMoney}`;
+        }
+    }
+
+    private _onLowCredits(): void {
+        // Disable spin button and shake the balance label
+        this._setSpinButtonEnabled(false);
+
+        if (this.balanceLabel) {
+            const node = this.balanceLabel.node;
+            const originalX = node.position.x;
+            const shakeDistance = 10;
+            const shakeDuration = 0.1;
+
+            tween(node)
+                .to(shakeDuration, { position: new Vec3(originalX + shakeDistance, node.position.y, node.position.z) })
+                .to(shakeDuration, { position: new Vec3(originalX - shakeDistance, node.position.y, node.position.z) })
+                .to(shakeDuration, { position: new Vec3(originalX + shakeDistance, node.position.y, node.position.z) })
+                .to(shakeDuration, { position: new Vec3(originalX, node.position.y, node.position.z) })
+                .start();
         }
     }
 }

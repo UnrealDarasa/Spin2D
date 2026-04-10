@@ -34,6 +34,7 @@ export class ReelController extends Component {
 
     /** The middle symbol SpriteFrame after the last spin. */
     private _finalSymbol: SpriteFrame | null = null;
+    private _currentSymbolIndex: number = 0;
 
     public get finalSymbol(): SpriteFrame | null {
         return this._finalSymbol;
@@ -56,47 +57,109 @@ export class ReelController extends Component {
         }
     }
 
-    /**
-     * Play spin animation for `duration` seconds.
-     * Returns a Promise that resolves when the reel has stopped.
-     */
-    public spinReel(duration: number): Promise<void> {
-        return new Promise<void>((resolve) => {
-            const totalTicks = Math.floor(duration / 0.1); // symbol changes
-            let tick = 0;
+    /** Highlight the middle (winning) symbol by enabling its first child (highlight node). */
+    public highlightWinningSymbol(): void {
+        const middleSymbol = this.symbolSprites[1];
+        if (middleSymbol && middleSymbol.children.length > 0) {
+            middleSymbol.children[0].active = true;
+        }
+    }
 
-            // Rapid symbol shuffle via repeating tween
+    /** Turn off highlights on all symbols by disabling their first child. */
+    public clearHighlights(): void {
+        for (const symbolNode of this.symbolSprites) {
+            if (symbolNode.children.length > 0) {
+                symbolNode.children[0].active = false;
+            }
+        }
+    }
+
+    /**
+     * Play spin animation for `duration` seconds, then land with the
+     * middle slot showing `symbolFrames[targetMiddleIndex]`.
+     *
+     * The final reel always shows 3 consecutive symbols in order:
+     *   slot 0 (top)    = targetMiddleIndex - 1   (wraps around)
+     *   slot 1 (middle) = targetMiddleIndex
+     *   slot 2 (bottom) = targetMiddleIndex + 1   (wraps around)
+     *
+     * During the spin, symbols cycle in consistent order: 0, 1, 2, 3, 4, 0 …
+     */
+    public spinReel(duration: number, targetMiddleIndex: number): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const totalTicks = Math.floor(duration / 0.1);
+            const totalFrames = this.symbolFrames.length;
+            if (totalFrames === 0) { resolve(); return; }
+
             const startY = this.node.position.y;
             const dropDist = this.symbolHeight;
 
-            const spinAction = tween(this.node)
+            // Start cycling from a random position
+            this._currentSymbolIndex = Math.floor(Math.random() * totalFrames);
+
+            tween(this.node)
                 .repeat(totalTicks,
                     tween(this.node)
-                        // slide down one symbol height
                         .to(0.08, { position: new Vec3(this.node.position.x, startY - dropDist, 0) }, { easing: 'linear' })
                         .call(() => {
-                            // snap back & randomise
                             this.node.setPosition(this.node.position.x, startY, 0);
-                            this.randomiseSymbols();
-                            tick++;
+                            this._cycleSymbols();
                         })
                 )
                 // ease-out final drop
                 .to(0.25, { position: new Vec3(this.node.position.x, startY - dropDist * 0.5, 0) }, { easing: 'backOut' })
                 .call(() => {
                     this.node.setPosition(this.node.position.x, startY, 0);
-                    this.randomiseSymbols();
-                    // Store the middle symbol's current frame
-                    const middleSymbolNode = this.symbolSprites[1];
-                    if (middleSymbolNode) {
-                        const sprite = middleSymbolNode.getComponent(Sprite);
-                        if (sprite) {
-                            this._finalSymbol = sprite.spriteFrame;
-                        }
-                    }
+
+                    // Set final symbols in consistent order based on the target middle index
+                    this._setSymbolsByMiddleIndex(targetMiddleIndex);
+
                     resolve();
                 })
                 .start();
         });
+    }
+
+    // ── Private helpers ──────────────────────────────────────
+
+    /**
+     * Set all 3 slots to consecutive frames centred on `middleIndex`.
+     *   slot 0 (top)    = middleIndex - 1   (wraps: if < 0 → last frame)
+     *   slot 1 (middle) = middleIndex
+     *   slot 2 (bottom) = middleIndex + 1   (wraps: if > last → 0)
+     */
+    private _setSymbolsByMiddleIndex(middleIndex: number): void {
+        const total = this.symbolFrames.length;
+        const indices = [
+            (middleIndex - 1 + total) % total,   // top
+            middleIndex % total,                   // middle
+            (middleIndex + 1) % total,             // bottom
+        ];
+
+        for (let i = 0; i < this.symbolSprites.length; i++) {
+            const sprite = this.symbolSprites[i]?.getComponent(Sprite);
+            if (sprite && i < indices.length) {
+                sprite.spriteFrame = this.symbolFrames[indices[i]];
+            }
+        }
+
+        // Store the middle symbol as the final result symbol
+        this._finalSymbol = this.symbolFrames[middleIndex % total];
+    }
+
+    /** Cycle all 3 slots to the next consecutive symbols in order: 0,1,2,3,4,0… */
+    private _cycleSymbols(): void {
+        if (this.symbolFrames.length === 0) return;
+
+        const total = this.symbolFrames.length;
+        for (let i = 0; i < this.symbolSprites.length; i++) {
+            const sprite = this.symbolSprites[i].getComponent(Sprite);
+            if (sprite) {
+                const frameIndex = (this._currentSymbolIndex + i) % total;
+                sprite.spriteFrame = this.symbolFrames[frameIndex];
+            }
+        }
+
+        this._currentSymbolIndex = (this._currentSymbolIndex + 1) % total;
     }
 }

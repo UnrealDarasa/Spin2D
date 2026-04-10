@@ -1,3 +1,10 @@
+/** Possible spin outcomes. */
+export enum SpinResult {
+    Lose = 0,
+    SmallWin = 1,
+    BigWin = 2,
+}
+
 /**
  * Central game configuration — all tuneable constants live here.
  *
@@ -40,9 +47,14 @@ export class GameConfig {
     // ── Reel animation ───────────────────────────────────────
     public reelCount: number = 3;
     public symbolsPerReel: number = 3;
-    public reelSymbols: string[] = ['🍒', '🍋', '⭐', '🔔', '💎'];
     public reelDurations: number[] = [1.0, 1.3, 1.6];
     public symbolHeight: number = 80;
+
+    // ── UI Labels ────────────────────────────────────────────
+    public balancePrefix: string = '';
+    public totalWonPrefix: string = '';
+    public spinningText: string = 'Spinning.';
+    public winResultFormat: string = '+{payout}';  // {payout} is replaced with actual value
 
     // ── Derived thresholds (recomputed after load) ───────────
     public get loseThreshold(): number {
@@ -91,7 +103,7 @@ export class GameConfig {
             'startingBalance', 'betAmount',
             'loseChance', 'smallWinChance', 'bigWinChance',
             'smallWinPayout', 'bigWinPayout',
-            'reelCount', 'symbolsPerReel', 'reelSymbols',
+            'reelCount', 'symbolsPerReel',
             'reelDurations', 'symbolHeight',
         ];
         for (const key of validKeys) {

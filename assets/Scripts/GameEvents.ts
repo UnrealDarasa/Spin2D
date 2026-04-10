@@ -1,6 +1,7 @@
 /**
  * Central registry of all game event names used with `director.emit()` /
  * `director.on()`.  Every component imports only this file — never each other.
+ * `director.on()`.  Every component imports only this file — never each other.
  *
  * Naming convention:  NOUN_VERB  (past tense for "something happened",
  * imperative for "request that something happens").
@@ -39,4 +40,16 @@ export const GameEvents = {
 
     /** Request reels to randomise (e.g. on reset).  No payload. */
     REELS_RANDOMISE: 'reels:randomise',
+
+    /** Highlight the winning slot (middle symbol of each reel).  Payload: { isWin: boolean } */
+    HIGHLIGHT_WIN: 'highlight:win',
+
+    /** Balance dropped below minimum (50 credits). No payload. */
+    LOW_CREDITS: 'low:credits',
+
+    /** Reels have stopped with final symbols. Payload: { finalSymbols: SpriteFrame[] } */
+    REELS_LANDED: 'reels:landed',
+
+    /** Spin result determined before reels spin. Payload: { result: SpinResult } */
+    SPIN_DETERMINED: 'spin:determined',
 } as const;

@@ -1,14 +1,7 @@
-import { _decorator, Component, director } from 'cc';
-import { GameConfig } from './GameConfig';
+import { _decorator, Component, director, SpriteFrame } from 'cc';
+import { GameConfig, SpinResult } from './GameConfig';
 import { GameEvents } from './GameEvents';
 const { ccclass } = _decorator;
-
-/** Possible spin outcomes. */
-export enum SpinResult {
-    Lose = 0,
-    SmallWin = 1,
-    BigWin = 2,
-}
 
 /**
  * Owns game state (balance) and rules (odds, payouts).
@@ -22,6 +15,7 @@ export enum SpinResult {
 export class GameManager extends Component {
 
     private _balance: number = 0;
+    private _desiredResult: SpinResult = SpinResult.Lose;
 
     public get balance(): number {
         return this._balance;
@@ -35,7 +29,7 @@ export class GameManager extends Component {
 
         director.on(GameEvents.SPIN_REQUESTED, this._onSpinRequested, this);
         director.on(GameEvents.RESET_REQUESTED, this._onResetRequested, this);
-        director.on(GameEvents.REELS_STOPPED, this._onReelsStopped, this);
+        director.on(GameEvents.REELS_LANDED, this._onReelsLanded, this);
     }
 
     start() {
@@ -46,7 +40,7 @@ export class GameManager extends Component {
     onDestroy() {
         director.off(GameEvents.SPIN_REQUESTED, this._onSpinRequested, this);
         director.off(GameEvents.RESET_REQUESTED, this._onResetRequested, this);
-        director.off(GameEvents.REELS_STOPPED, this._onReelsStopped, this);
+        director.off(GameEvents.REELS_LANDED, this._onReelsLanded, this);
     }
 
     // ── Event handlers ───────────────────────────────────────
@@ -62,13 +56,24 @@ export class GameManager extends Component {
         // Deduct bet
         this._balance -= cfg.betAmount;
         director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
+
+        // Check if balance is too low
+        if (this._balance < 50) {
+            director.emit(GameEvents.LOW_CREDITS);
+        }
+
+        // Determine result first (60/30/10 odds)
+        this._desiredResult = this._generateResult();
+
+        // Emit spin determined event with desired result
+        director.emit(GameEvents.SPIN_DETERMINED, { result: this._desiredResult });
         director.emit(GameEvents.BET_PLACED, { balance: this._balance });
     }
 
-    private _onReelsStopped(): void {
-        // Generate result after animation finishes
+    private _onReelsLanded(payload: { finalSymbols: (SpriteFrame | null)[] }): void {
+        // Result was already determined before spin; use stored value
+        const result = this._desiredResult;
         const cfg = GameConfig.instance;
-        const result = this._generateResult();
         const payout = this._payoutFor(result, cfg);
 
         if (payout > 0) {
@@ -76,11 +81,22 @@ export class GameManager extends Component {
         }
 
         director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
+
+        // Check if balance is too low
+        if (this._balance < 50) {
+            director.emit(GameEvents.LOW_CREDITS);
+        }
+
         director.emit(GameEvents.SPIN_RESULT, {
             result,
             payout,
             balance: this._balance,
         });
+
+        // Highlight winning symbols if there's a win
+        if (payout > 0) {
+            director.emit(GameEvents.HIGHLIGHT_WIN, { result });
+        }
     }
 
     private _onResetRequested(): void {
@@ -93,6 +109,7 @@ export class GameManager extends Component {
     // ── Helpers ──────────────────────────────────────────────
 
     private _generateResult(): SpinResult {
+        // Generate result by odds: 60% lose, 30% small win, 10% big win
         const cfg = GameConfig.instance;
         const roll = Math.random();
         if (roll < cfg.loseThreshold) {
@@ -106,8 +123,8 @@ export class GameManager extends Component {
     private _payoutFor(result: SpinResult, cfg: GameConfig): number {
         switch (result) {
             case SpinResult.SmallWin: return cfg.smallWinPayout;
-            case SpinResult.BigWin:   return cfg.bigWinPayout;
-            default:                  return 0;
+            case SpinResult.BigWin: return cfg.bigWinPayout;
+            default: return 0;
         }
     }
 }
