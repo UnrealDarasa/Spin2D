@@ -32,12 +32,6 @@ export const GameEvents = {
     GAME_RESET: 'game:reset',
 
     // ── Reels ────────────────────────────────────────────────
-    /** All reels have finished animating.  No payload. */
-    REELS_STOPPED: 'reels:stopped',
-
-    /** Request reels to start spinning.  No payload. */
-    REELS_START: 'reels:start',
-
     /** Request reels to randomise (e.g. on reset).  No payload. */
     REELS_RANDOMISE: 'reels:randomise',
 

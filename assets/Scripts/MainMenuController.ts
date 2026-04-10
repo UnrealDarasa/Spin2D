@@ -13,11 +13,11 @@ export class MainMenuController extends Component {
 
     start() {
         if (this.playButton) {
-            this.playButton.node.on(Button.EventType.CLICK, this._onPlayClicked, this);
+            this.playButton.node.on(Button.EventType.CLICK, this.onPlayClicked, this);
         }
     }
 
-    private _onPlayClicked(): void {
+    private onPlayClicked(): void {
         director.loadScene('Gameplay');
     }
 }

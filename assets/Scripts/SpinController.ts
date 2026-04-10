@@ -28,31 +28,29 @@ export class SpinController extends Component {
 
     public reels: ReelController[] = [];
 
-    private _spinning: boolean = false;
-    private _desiredResult: SpinResult = SpinResult.Lose;
-    private _lastMiddleIndices: number[] = [];
+    private spinning: boolean = false;
+    private desiredResult: SpinResult = SpinResult.Lose;
+    private lastMiddleIndices: number[] = [];
 
     // ── Lifecycle ────────────────────────────────────────────
 
     onLoad() {
-        director.on(GameEvents.SPIN_DETERMINED, this._onSpinDetermined, this);
-        director.on(GameEvents.BET_PLACED, this._onBetPlaced, this);
-        director.on(GameEvents.GAME_RESET, this._onGameReset, this);
-        director.on(GameEvents.REELS_RANDOMISE, this._onReelsRandomise, this);
-        director.on(GameEvents.HIGHLIGHT_WIN, this._onHighlightWin, this);
+        director.on(GameEvents.SPIN_DETERMINED, this.onSpinDetermined, this);
+        director.on(GameEvents.BET_PLACED, this.onBetPlaced, this);
+        director.on(GameEvents.GAME_RESET, this.onGameReset, this);
+        director.on(GameEvents.REELS_RANDOMISE, this.onReelsRandomise, this);
+        director.on(GameEvents.HIGHLIGHT_WIN, this.onHighlightWin, this);
     }
 
     start() {
         // ── Spawn reels from prefab ──────────────────────────
-        this._spawnReels();
+        this.spawnReels();
 
-        // Show random symbols on load
-        for (const reel of this.reels) {
-            reel.randomiseSymbols();
-        }
+        // Show symbols in correct consecutive order on load
+        this.resetReelSymbols();
     }
 
-    private _spawnReels(): void {
+    private spawnReels(): void {
         const cfg = GameConfig.instance;
 
         if (!this.reelPrefab || !this.reelContainer) {
@@ -74,18 +72,18 @@ export class SpinController extends Component {
     }
 
     onDestroy() {
-        director.off(GameEvents.SPIN_DETERMINED, this._onSpinDetermined, this);
-        director.off(GameEvents.BET_PLACED, this._onBetPlaced, this);
-        director.off(GameEvents.GAME_RESET, this._onGameReset, this);
-        director.off(GameEvents.REELS_RANDOMISE, this._onReelsRandomise, this);
-        director.off(GameEvents.HIGHLIGHT_WIN, this._onHighlightWin, this);
+        director.off(GameEvents.SPIN_DETERMINED, this.onSpinDetermined, this);
+        director.off(GameEvents.BET_PLACED, this.onBetPlaced, this);
+        director.off(GameEvents.GAME_RESET, this.onGameReset, this);
+        director.off(GameEvents.REELS_RANDOMISE, this.onReelsRandomise, this);
+        director.off(GameEvents.HIGHLIGHT_WIN, this.onHighlightWin, this);
     }
 
     // ── Event handlers ───────────────────────────────────────
 
-    private async _onBetPlaced(): Promise<void> {
-        if (this._spinning) return;
-        this._spinning = true;
+    private async onBetPlaced(): Promise<void> {
+        if (this.spinning) return;
+        this.spinning = true;
 
         // Clear previous win highlights before spinning
         for (const reel of this.reels) {
@@ -95,9 +93,13 @@ export class SpinController extends Component {
         const cfg = GameConfig.instance;
         const durations = cfg.reelDurations;
 
+        if (durations.length < this.reels.length) {
+            console.warn(`[SpinController] reelDurations has ${durations.length} entries but there are ${this.reels.length} reels — last duration will be reused.`);
+        }
+
         // Generate the middle-slot frame index for each reel based on desired result
-        const middleIndices = this._generateMiddleIndices(this._desiredResult);
-        this._lastMiddleIndices = middleIndices;
+        const middleIndices = this.generateMiddleIndices(this.desiredResult);
+        this.lastMiddleIndices = middleIndices;
 
         // Spin all reels with staggered durations
         const promises = this.reels.map((reel, i) => {
@@ -111,26 +113,25 @@ export class SpinController extends Component {
         // Collect final symbols from all reels
         const finalSymbols: (SpriteFrame | null)[] = this.reels.map(reel => reel.finalSymbol);
 
-        this._spinning = false;
-        director.emit(GameEvents.REELS_STOPPED);
+        this.spinning = false;
         director.emit(GameEvents.REELS_LANDED, { finalSymbols });
     }
 
-    private _onGameReset(): void {
-        // Clear all win highlights
+    private onGameReset(): void {
+        // Clear all win highlights and show symbols in correct order
         for (const reel of this.reels) {
             reel.clearHighlights();
-            reel.randomiseSymbols();
         }
+        this.resetReelSymbols();
     }
 
-    private _onReelsRandomise(): void {
+    private onReelsRandomise(): void {
         for (const reel of this.reels) {
             reel.randomiseSymbols();
         }
     }
 
-    private _onHighlightWin(payload: { result: SpinResult }): void {
+    private onHighlightWin(payload: { result: SpinResult }): void {
         if (payload.result === SpinResult.BigWin) {
             // All 3 match — highlight all reels
             for (const reel of this.reels) {
@@ -138,7 +139,7 @@ export class SpinController extends Component {
             }
         } else if (payload.result === SpinResult.SmallWin) {
             // Only 2 match — find which middle indices are the same and highlight those reels
-            const indices = this._lastMiddleIndices;
+            const indices = this.lastMiddleIndices;
             const freq: { [key: number]: number[] } = {};
             for (let i = 0; i < indices.length; i++) {
                 if (!freq[indices[i]]) freq[indices[i]] = [];
@@ -154,9 +155,18 @@ export class SpinController extends Component {
         }
     }
 
-    private _onSpinDetermined(payload: { result: SpinResult }): void {
+    private onSpinDetermined(payload: { result: SpinResult }): void {
         // Store desired result for the upcoming spin
-        this._desiredResult = payload.result;
+        this.desiredResult = payload.result;
+    }
+
+    /** Assign each reel a random but correctly ordered set of consecutive symbols. */
+    private resetReelSymbols(): void {
+        for (const reel of this.reels) {
+            if (reel.symbolFrames.length === 0) continue;
+            const middleIndex = Math.floor(Math.random() * reel.symbolFrames.length);
+            reel.setSymbolsByMiddleIndex(middleIndex);
+        }
     }
 
     /**
@@ -172,11 +182,21 @@ export class SpinController extends Component {
      *   SmallWin: exactly 2 middle indices are the same
      *   BigWin:   all 3 middle indices are the same
      */
-    private _generateMiddleIndices(result: SpinResult): number[] {
+    private generateMiddleIndices(result: SpinResult): number[] {
         const totalFrames = this.reels[0]?.symbolFrames.length ?? 0;
         if (totalFrames === 0) return [0, 0, 0];
 
+        const cfg = GameConfig.instance;
         const randIdx = () => Math.floor(Math.random() * totalFrames);
+
+        // Guard: not enough distinct symbols for the requested result.
+        // Lose needs ≥3 distinct, SmallWin needs ≥2 distinct.
+        // Fall back to BigWin (all same) if insufficient.
+        if (totalFrames < cfg.minSymbolFrames) {
+            console.warn(`[SpinController] Only ${totalFrames} symbolFrames — need at least ${cfg.minSymbolFrames}. Forcing BigWin layout to avoid infinite loop.`);
+            const idx = randIdx();
+            return [idx, idx, idx];
+        }
 
         if (result === SpinResult.BigWin) {
             // All 3 reels land on the same symbol

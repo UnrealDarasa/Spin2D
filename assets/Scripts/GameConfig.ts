@@ -22,13 +22,13 @@ export enum SpinResult {
 export class GameConfig {
 
     // ── Singleton ────────────────────────────────────────────
-    private static _instance: GameConfig | null = null;
+    private static sInstance: GameConfig | null = null;
 
     public static get instance(): GameConfig {
-        if (!GameConfig._instance) {
-            GameConfig._instance = new GameConfig();
+        if (!GameConfig.sInstance) {
+            GameConfig.sInstance = new GameConfig();
         }
-        return GameConfig._instance;
+        return GameConfig.sInstance;
     }
 
     // ── Balance ──────────────────────────────────────────────
@@ -46,7 +46,6 @@ export class GameConfig {
 
     // ── Reel animation ───────────────────────────────────────
     public reelCount: number = 3;
-    public symbolsPerReel: number = 3;
     public reelDurations: number[] = [1.0, 1.3, 1.6];
     public symbolHeight: number = 80;
 
@@ -54,7 +53,11 @@ export class GameConfig {
     public balancePrefix: string = '';
     public totalWonPrefix: string = '';
     public spinningText: string = 'Spinning.';
+    public loseText: string = 'No Win';
     public winResultFormat: string = '+{payout}';  // {payout} is replaced with actual value
+
+    /** Minimum number of distinct symbolFrames required per reel for the odds to work. */
+    public minSymbolFrames: number = 3;
 
     // ── Derived thresholds (recomputed after load) ───────────
     public get loseThreshold(): number {
@@ -82,7 +85,7 @@ export class GameConfig {
                 return cfg;
             }
             const data = await response.json();
-            GameConfig._applyOverrides(cfg, data);
+            GameConfig.applyOverridesInternal(cfg, data);
             console.log('[GameConfig] Loaded from server:', url);
         } catch (err) {
             console.warn('[GameConfig] Failed to fetch config, using defaults:', err);
@@ -95,15 +98,15 @@ export class GameConfig {
      * Only known keys are applied; unknown keys are ignored.
      */
     public static applyOverrides(overrides: Record<string, unknown>): void {
-        GameConfig._applyOverrides(GameConfig.instance, overrides);
+        GameConfig.applyOverridesInternal(GameConfig.instance, overrides);
     }
 
-    private static _applyOverrides(cfg: GameConfig, data: Record<string, unknown>): void {
+    private static applyOverridesInternal(cfg: GameConfig, data: Record<string, unknown>): void {
         const validKeys: (keyof GameConfig)[] = [
             'startingBalance', 'betAmount',
             'loseChance', 'smallWinChance', 'bigWinChance',
             'smallWinPayout', 'bigWinPayout',
-            'reelCount', 'symbolsPerReel',
+            'reelCount', 'minSymbolFrames',
             'reelDurations', 'symbolHeight',
         ];
         for (const key of validKeys) {
@@ -115,6 +118,6 @@ export class GameConfig {
 
     /** Replace the singleton (useful for testing). */
     public static resetToDefaults(): void {
-        GameConfig._instance = new GameConfig();
+        GameConfig.sInstance = new GameConfig();
     }
 }

@@ -1,7 +1,6 @@
-import { _decorator, Component, Label, Button, director, tween, Vec3 } from 'cc';
-import { GameConfig } from './GameConfig';
+import { _decorator, Component, Label, Button, director, tween, Tween, Vec3, Node } from 'cc';
+import { GameConfig, SpinResult } from './GameConfig';
 import { GameEvents } from './GameEvents';
-import { SpinResult } from './GameManager';
 const { ccclass, property } = _decorator;
 
 /**
@@ -33,152 +32,173 @@ export class UIManager extends Component {
     public resetButton: Button | null = null;
 
     // ── State ────────────────────────────────────────────────
-    private _totalWinMoney: number = 0;
+    private totalWinMoney: number = 0;
+    private balanceLabelOriginX: number = 0;
+    private shakeTween: Tween<Node> | null = null;
 
     // ── Lifecycle ────────────────────────────────────────────
 
     onLoad() {
         // Subscribe to game events
-        director.on(GameEvents.BALANCE_CHANGED, this._onBalanceChanged, this);
-        director.on(GameEvents.BET_PLACED, this._onBetPlaced, this);
-        director.on(GameEvents.BET_REJECTED, this._onBetRejected, this);
-        director.on(GameEvents.SPIN_RESULT, this._onSpinResult, this);
-        director.on(GameEvents.GAME_RESET, this._onGameReset, this);
-        director.on(GameEvents.LOW_CREDITS, this._onLowCredits, this);
+        director.on(GameEvents.BALANCE_CHANGED, this.onBalanceChanged, this);
+        director.on(GameEvents.BET_PLACED, this.onBetPlaced, this);
+        director.on(GameEvents.BET_REJECTED, this.onBetRejected, this);
+        director.on(GameEvents.SPIN_RESULT, this.onSpinResult, this);
+        director.on(GameEvents.GAME_RESET, this.onGameReset, this);
+        director.on(GameEvents.LOW_CREDITS, this.onLowCredits, this);
     }
 
     start() {
         // Wire button clicks → emit requests
         if (this.spinButton) {
-            this.spinButton.node.on(Button.EventType.CLICK, this._onSpinClicked, this);
+            this.spinButton.node.on(Button.EventType.CLICK, this.onSpinClicked, this);
         }
         if (this.resetButton) {
-            this.resetButton.node.on(Button.EventType.CLICK, this._onResetClicked, this);
+            this.resetButton.node.on(Button.EventType.CLICK, this.onResetClicked, this);
         }
 
-        this._showResult('');
+        this.showResult('');
+
+        // Cache the balance label's original X so shakes always return to center
+        if (this.balanceLabel) {
+            this.balanceLabelOriginX = this.balanceLabel.node.position.x;
+        }
     }
 
     onDestroy() {
-        director.off(GameEvents.BALANCE_CHANGED, this._onBalanceChanged, this);
-        director.off(GameEvents.BET_PLACED, this._onBetPlaced, this);
-        director.off(GameEvents.BET_REJECTED, this._onBetRejected, this);
-        director.off(GameEvents.SPIN_RESULT, this._onSpinResult, this);
-        director.off(GameEvents.GAME_RESET, this._onGameReset, this);
-        director.off(GameEvents.LOW_CREDITS, this._onLowCredits, this);
+        director.off(GameEvents.BALANCE_CHANGED, this.onBalanceChanged, this);
+        director.off(GameEvents.BET_PLACED, this.onBetPlaced, this);
+        director.off(GameEvents.BET_REJECTED, this.onBetRejected, this);
+        director.off(GameEvents.SPIN_RESULT, this.onSpinResult, this);
+        director.off(GameEvents.GAME_RESET, this.onGameReset, this);
+        director.off(GameEvents.LOW_CREDITS, this.onLowCredits, this);
     }
 
     // ── Button handlers (emit requests) ──────────────────────
 
-    private _onSpinClicked(): void {
+    private onSpinClicked(): void {
         director.emit(GameEvents.SPIN_REQUESTED);
     }
 
-    private _onResetClicked(): void {
+    private onResetClicked(): void {
         director.emit(GameEvents.RESET_REQUESTED);
     }
 
     // ── Event handlers (react to state) ──────────────────────
 
-    private _onBalanceChanged(payload: { balance: number }): void {
-        this._updateBalance(payload.balance);
+    private onBalanceChanged(payload: { balance: number }): void {
+        this.updateBalance(payload.balance);
     }
 
-    private _onBetPlaced(_payload: { balance: number }): void {
+    private onBetPlaced(payload: { balance: number }): void {
         // Disable both buttons during spin
-        this._setSpinButtonEnabled(false);
-        this._setResetButtonEnabled(false);
+        this.setSpinButtonEnabled(false);
+        this.setResetButtonEnabled(false);
         const cfg = GameConfig.instance;
-        this._showResult(cfg.spinningText);
+        this.showResult(cfg.spinningText);
     }
 
-    private _onBetRejected(): void {
-        // No change to result label
+    private onBetRejected(): void {
+        // Balance insufficient — shake the balance label as feedback
+        this.shakeBalanceLabel();
     }
 
-    private _onSpinResult(payload: { result: SpinResult; payout: number; balance: number }): void {
-        // Show payout amount (0 for losses, positive for wins)
-        this._showResult(payload.payout > 0 ? `+${payload.payout}` : '');
+    private onSpinResult(payload: { result: SpinResult; payout: number; balance: number }): void {
+        // Show payout amount for wins, or lose text for losses
+        const cfg = GameConfig.instance;
+        if (payload.payout > 0) {
+            this.showResult(cfg.winResultFormat.replace('{payout}', String(payload.payout)));
+        } else {
+            this.showResult(cfg.loseText);
+        }
 
         // Add payout to total wins
         if (payload.payout > 0) {
-            this._addToTotalWin(payload.payout);
+            this.addToTotalWin(payload.payout);
         }
 
-        // Re-enable both buttons, but disable spin if insufficient credits
-        const cfg = GameConfig.instance;
-        const canBet = payload.balance >= cfg.betAmount;
-        this._setSpinButtonEnabled(canBet);
-        this._setResetButtonEnabled(true);
+        // Re-enable spin and reset buttons after spin completes
+        this.setSpinButtonEnabled(true);
+        this.setResetButtonEnabled(true);
     }
 
-    private _onGameReset(payload: { balance: number }): void {
-        this._showResult('');
-        this._setSpinButtonEnabled(true);
-        this._setResetButtonEnabled(true);
-        this._resetTotalWin();
+    private onGameReset(payload: { balance: number }): void {
+        this.showResult('');
+        this.setSpinButtonEnabled(true);
+        this.setResetButtonEnabled(true);
+        this.resetTotalWin();
     }
 
     // ── Display helpers (private) ────────────────────────────
 
-    private _updateBalance(balance: number): void {
+    private updateBalance(balance: number): void {
         if (this.balanceLabel) {
             const cfg = GameConfig.instance;
             this.balanceLabel.string = `${cfg.balancePrefix} ${balance}`;
         }
     }
 
-    private _showResult(text: string): void {
+    private showResult(text: string): void {
         if (this.resultLabel) {
             this.resultLabel.string = text;
         }
     }
 
-    private _setSpinButtonEnabled(enabled: boolean): void {
+    private setSpinButtonEnabled(enabled: boolean): void {
         if (this.spinButton) {
             this.spinButton.interactable = enabled;
         }
     }
 
-    private _setResetButtonEnabled(enabled: boolean): void {
+    private setResetButtonEnabled(enabled: boolean): void {
         if (this.resetButton) {
             this.resetButton.interactable = enabled;
         }
     }
 
-    private _addToTotalWin(amount: number): void {
-        this._totalWinMoney += amount;
-        this._updateTotalWin();
+    private addToTotalWin(amount: number): void {
+        this.totalWinMoney += amount;
+        this.updateTotalWin();
     }
 
-    private _resetTotalWin(): void {
-        this._totalWinMoney = 0;
-        this._updateTotalWin();
+    private resetTotalWin(): void {
+        this.totalWinMoney = 0;
+        this.updateTotalWin();
     }
 
-    private _updateTotalWin(): void {
+    private updateTotalWin(): void {
         if (this.winCountLabel) {
             const cfg = GameConfig.instance;
-            this.winCountLabel.string = `${cfg.totalWonPrefix} ${this._totalWinMoney}`;
+            this.winCountLabel.string = `${cfg.totalWonPrefix} ${this.totalWinMoney}`;
         }
     }
 
-    private _onLowCredits(): void {
-        // Disable spin button and shake the balance label
-        this._setSpinButtonEnabled(false);
+    private onLowCredits(): void {
+        // Shake the balance label as a visual warning
+        this.shakeBalanceLabel();
+    }
 
-        if (this.balanceLabel) {
-            const node = this.balanceLabel.node;
-            const originalX = node.position.x;
-            const shakeDistance = 10;
-            const shakeDuration = 0.1;
+    private shakeBalanceLabel(): void {
+        if (!this.balanceLabel) return;
 
-            tween(node)
-                .to(shakeDuration, { position: new Vec3(originalX + shakeDistance, node.position.y, node.position.z) })
-                .to(shakeDuration, { position: new Vec3(originalX - shakeDistance, node.position.y, node.position.z) })
-                .to(shakeDuration, { position: new Vec3(originalX + shakeDistance, node.position.y, node.position.z) })
-                .to(shakeDuration, { position: new Vec3(originalX, node.position.y, node.position.z) })
-                .start();
+        const node = this.balanceLabel.node;
+        const originX = this.balanceLabelOriginX;
+        const shakeDistance = 10;
+        const shakeDuration = 0.1;
+
+        // Stop any running shake and snap back to center first
+        if (this.shakeTween) {
+            this.shakeTween.stop();
+            this.shakeTween = null;
+            node.setPosition(originX, node.position.y, node.position.z);
         }
+
+        this.shakeTween = tween(node)
+            .to(shakeDuration, { position: new Vec3(originX + shakeDistance, node.position.y, node.position.z) })
+            .to(shakeDuration, { position: new Vec3(originX - shakeDistance, node.position.y, node.position.z) })
+            .to(shakeDuration, { position: new Vec3(originX + shakeDistance, node.position.y, node.position.z) })
+            .to(shakeDuration, { position: new Vec3(originX, node.position.y, node.position.z) })
+            .call(() => { this.shakeTween = null; })
+            .start();
     }
 }

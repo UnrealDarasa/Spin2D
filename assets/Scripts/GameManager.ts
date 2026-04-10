@@ -14,83 +14,86 @@ const { ccclass } = _decorator;
 @ccclass('GameManager')
 export class GameManager extends Component {
 
-    private _balance: number = 0;
-    private _desiredResult: SpinResult = SpinResult.Lose;
+    private balance: number = 0;
+    private desiredResult: SpinResult = SpinResult.Lose;
+    private spinning: boolean = false;
 
-    public get balance(): number {
-        return this._balance;
+    public get currentBalance(): number {
+        return this.balance;
     }
 
     // ── Lifecycle ────────────────────────────────────────────
 
     onLoad() {
         const cfg = GameConfig.instance;
-        this._balance = cfg.startingBalance;
+        this.balance = cfg.startingBalance;
 
-        director.on(GameEvents.SPIN_REQUESTED, this._onSpinRequested, this);
-        director.on(GameEvents.RESET_REQUESTED, this._onResetRequested, this);
-        director.on(GameEvents.REELS_LANDED, this._onReelsLanded, this);
+        director.on(GameEvents.SPIN_REQUESTED, this.onSpinRequested, this);
+        director.on(GameEvents.RESET_REQUESTED, this.onResetRequested, this);
+        director.on(GameEvents.REELS_LANDED, this.onReelsLanded, this);
     }
 
     start() {
         // Broadcast initial balance so UI can display it
-        director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
+        director.emit(GameEvents.BALANCE_CHANGED, { balance: this.balance });
     }
 
     onDestroy() {
-        director.off(GameEvents.SPIN_REQUESTED, this._onSpinRequested, this);
-        director.off(GameEvents.RESET_REQUESTED, this._onResetRequested, this);
-        director.off(GameEvents.REELS_LANDED, this._onReelsLanded, this);
+        director.off(GameEvents.SPIN_REQUESTED, this.onSpinRequested, this);
+        director.off(GameEvents.RESET_REQUESTED, this.onResetRequested, this);
+        director.off(GameEvents.REELS_LANDED, this.onReelsLanded, this);
     }
 
     // ── Event handlers ───────────────────────────────────────
 
-    private _onSpinRequested(): void {
+    private onSpinRequested(): void {
         const cfg = GameConfig.instance;
 
-        if (this._balance < cfg.betAmount) {
+        if (this.balance < cfg.betAmount) {
             director.emit(GameEvents.BET_REJECTED);
             return;
         }
 
         // Deduct bet
-        this._balance -= cfg.betAmount;
-        director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
+        this.balance -= cfg.betAmount;
+        director.emit(GameEvents.BALANCE_CHANGED, { balance: this.balance });
 
-        // Check if balance is too low
-        if (this._balance < 50) {
+        // Check if balance is too low for the next spin
+        if (this.balance < cfg.betAmount) {
             director.emit(GameEvents.LOW_CREDITS);
         }
 
         // Determine result first (60/30/10 odds)
-        this._desiredResult = this._generateResult();
+        this.desiredResult = this.generateResult();
 
         // Emit spin determined event with desired result
-        director.emit(GameEvents.SPIN_DETERMINED, { result: this._desiredResult });
-        director.emit(GameEvents.BET_PLACED, { balance: this._balance });
+        this.spinning = true;
+        director.emit(GameEvents.SPIN_DETERMINED, { result: this.desiredResult });
+        director.emit(GameEvents.BET_PLACED, { balance: this.balance });
     }
 
-    private _onReelsLanded(payload: { finalSymbols: (SpriteFrame | null)[] }): void {
+    private onReelsLanded(payload: { finalSymbols: (SpriteFrame | null)[] }): void {
         // Result was already determined before spin; use stored value
-        const result = this._desiredResult;
+        const result = this.desiredResult;
         const cfg = GameConfig.instance;
-        const payout = this._payoutFor(result, cfg);
+        const payout = this.payoutFor(result, cfg);
 
         if (payout > 0) {
-            this._balance += payout;
+            this.balance += payout;
         }
 
-        director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
+        director.emit(GameEvents.BALANCE_CHANGED, { balance: this.balance });
 
-        // Check if balance is too low
-        if (this._balance < 50) {
+        // Check if balance is too low for the next spin
+        if (this.balance < cfg.betAmount) {
             director.emit(GameEvents.LOW_CREDITS);
         }
 
+        this.spinning = false;
         director.emit(GameEvents.SPIN_RESULT, {
             result,
             payout,
-            balance: this._balance,
+            balance: this.balance,
         });
 
         // Highlight winning symbols if there's a win
@@ -99,16 +102,18 @@ export class GameManager extends Component {
         }
     }
 
-    private _onResetRequested(): void {
+    private onResetRequested(): void {
+        if (this.spinning) return;          // ignore reset while reels are mid-spin
+
         const cfg = GameConfig.instance;
-        this._balance = cfg.startingBalance;
-        director.emit(GameEvents.BALANCE_CHANGED, { balance: this._balance });
-        director.emit(GameEvents.GAME_RESET, { balance: this._balance });
+        this.balance = cfg.startingBalance;
+        director.emit(GameEvents.BALANCE_CHANGED, { balance: this.balance });
+        director.emit(GameEvents.GAME_RESET, { balance: this.balance });
     }
 
     // ── Helpers ──────────────────────────────────────────────
 
-    private _generateResult(): SpinResult {
+    private generateResult(): SpinResult {
         // Generate result by odds: 60% lose, 30% small win, 10% big win
         const cfg = GameConfig.instance;
         const roll = Math.random();
@@ -120,7 +125,7 @@ export class GameManager extends Component {
         return SpinResult.BigWin;
     }
 
-    private _payoutFor(result: SpinResult, cfg: GameConfig): number {
+    private payoutFor(result: SpinResult, cfg: GameConfig): number {
         switch (result) {
             case SpinResult.SmallWin: return cfg.smallWinPayout;
             case SpinResult.BigWin: return cfg.bigWinPayout;

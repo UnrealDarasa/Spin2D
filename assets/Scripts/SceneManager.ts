@@ -26,7 +26,7 @@ export class SceneManager extends Component {
     @property({ type: SpinController, tooltip: 'SpinController component (wire the SpinController node)' })
     public spinController: SpinController | null = null;
 
-    @property({ type: GameplayManager, tooltip: 'SpinController component (wire the SpinController node)' })
+    @property({ type: GameplayManager, tooltip: 'GameManager component (wire the GameManager node)' })
     public gameplayManager: GameplayManager | null = null;
 
 }

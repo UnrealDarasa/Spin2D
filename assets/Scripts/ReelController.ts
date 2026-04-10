@@ -33,11 +33,11 @@ export class ReelController extends Component {
     public symbolHeight: number = 80;
 
     /** The middle symbol SpriteFrame after the last spin. */
-    private _finalSymbol: SpriteFrame | null = null;
-    private _currentSymbolIndex: number = 0;
+    private finalSpriteFrame: SpriteFrame | null = null;
+    private currentSymbolIndex: number = 0;
 
     public get finalSymbol(): SpriteFrame | null {
-        return this._finalSymbol;
+        return this.finalSpriteFrame;
     }
 
     // ── Public API ───────────────────────────────────────────
@@ -95,7 +95,7 @@ export class ReelController extends Component {
             const dropDist = this.symbolHeight;
 
             // Start cycling from a random position
-            this._currentSymbolIndex = Math.floor(Math.random() * totalFrames);
+            this.currentSymbolIndex = Math.floor(Math.random() * totalFrames);
 
             tween(this.node)
                 .repeat(totalTicks,
@@ -103,7 +103,7 @@ export class ReelController extends Component {
                         .to(0.08, { position: new Vec3(this.node.position.x, startY - dropDist, 0) }, { easing: 'linear' })
                         .call(() => {
                             this.node.setPosition(this.node.position.x, startY, 0);
-                            this._cycleSymbols();
+                            this.cycleSymbols();
                         })
                 )
                 // ease-out final drop
@@ -112,7 +112,7 @@ export class ReelController extends Component {
                     this.node.setPosition(this.node.position.x, startY, 0);
 
                     // Set final symbols in consistent order based on the target middle index
-                    this._setSymbolsByMiddleIndex(targetMiddleIndex);
+                    this.setSymbolsByMiddleIndex(targetMiddleIndex);
 
                     resolve();
                 })
@@ -120,7 +120,7 @@ export class ReelController extends Component {
         });
     }
 
-    // ── Private helpers ──────────────────────────────────────
+    // ── Public helpers ─────────────────────────────────────
 
     /**
      * Set all 3 slots to consecutive frames centred on `middleIndex`.
@@ -128,7 +128,7 @@ export class ReelController extends Component {
      *   slot 1 (middle) = middleIndex
      *   slot 2 (bottom) = middleIndex + 1   (wraps: if > last → 0)
      */
-    private _setSymbolsByMiddleIndex(middleIndex: number): void {
+    public setSymbolsByMiddleIndex(middleIndex: number): void {
         const total = this.symbolFrames.length;
         const indices = [
             (middleIndex - 1 + total) % total,   // top
@@ -144,22 +144,22 @@ export class ReelController extends Component {
         }
 
         // Store the middle symbol as the final result symbol
-        this._finalSymbol = this.symbolFrames[middleIndex % total];
+        this.finalSpriteFrame = this.symbolFrames[middleIndex % total];
     }
 
     /** Cycle all 3 slots to the next consecutive symbols in order: 0,1,2,3,4,0… */
-    private _cycleSymbols(): void {
+    private cycleSymbols(): void {
         if (this.symbolFrames.length === 0) return;
 
         const total = this.symbolFrames.length;
         for (let i = 0; i < this.symbolSprites.length; i++) {
             const sprite = this.symbolSprites[i].getComponent(Sprite);
             if (sprite) {
-                const frameIndex = (this._currentSymbolIndex + i) % total;
+                const frameIndex = (this.currentSymbolIndex + i) % total;
                 sprite.spriteFrame = this.symbolFrames[frameIndex];
             }
         }
 
-        this._currentSymbolIndex = (this._currentSymbolIndex + 1) % total;
+        this.currentSymbolIndex = (this.currentSymbolIndex + 1) % total;
     }
 }
